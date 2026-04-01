@@ -80,6 +80,8 @@ func main() {
 	fmt.Println("GET  /products?limit=10&skip=0&in_stock=true")
 	fmt.Println("GET  /products/{id}")
 	fmt.Println("POST /products (single object or array)")
+	fmt.Println("PUT  /products/bulk")
+	fmt.Println("PATCH /products/bulk")
 	fmt.Println("PUT /products/{id}")
 	fmt.Println("PATCH /products/{id}")
 	fmt.Println("DELETE /products/{id}")

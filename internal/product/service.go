@@ -108,20 +108,33 @@ func (s *Service) ReplaceProduct(ctx context.Context, id string, request UpdateP
 		return nil, err
 	}
 
-	update := bson.M{
-		"$set": bson.M{
-			"name":        product.Name,
-			"price":       product.Price,
-			"in_stock":    product.InStock,
-			"description": product.Description,
-		},
-	}
+	update := buildReplaceProductUpdate(product)
 
 	if err := s.repository.Update(ctx, objectID, update); err != nil {
 		return nil, err
 	}
 
 	return s.repository.GetByID(ctx, objectID)
+}
+
+func (s *Service) ReplaceManyProducts(ctx context.Context, request UpdateManyProductsRequest) error {
+	objectIDs, err := parseProductIDs(request.IDs)
+	if err != nil {
+		return err
+	}
+
+	product := &Product{
+		Name:        request.Product.Name,
+		Price:       request.Product.Price,
+		InStock:     request.Product.InStock,
+		Description: request.Product.Description,
+	}
+
+	if err := validateProduct(product); err != nil {
+		return err
+	}
+
+	return s.repository.UpdateMany(ctx, objectIDs, buildReplaceProductUpdate(product))
 }
 
 func (s *Service) PatchProduct(ctx context.Context, id string, request PatchProductRequest) (*Product, error) {
@@ -175,6 +188,20 @@ func (s *Service) PatchProduct(ctx context.Context, id string, request PatchProd
 	return s.repository.GetByID(ctx, objectID)
 }
 
+func (s *Service) PatchManyProducts(ctx context.Context, request PatchManyProductsRequest) error {
+	objectIDs, err := parseProductIDs(request.IDs)
+	if err != nil {
+		return err
+	}
+
+	update, err := buildPatchProductUpdate(request.Product)
+	if err != nil {
+		return err
+	}
+
+	return s.repository.UpdateMany(ctx, objectIDs, update)
+}
+
 func (s *Service) DeleteProduct(ctx context.Context, id string) error {
 	objectID, err := parseProductID(id)
 	if err != nil {
@@ -196,6 +223,75 @@ func parseProductID(id string) (primitive.ObjectID, error) {
 	}
 
 	return objectID, nil
+}
+
+func parseProductIDs(ids []string) ([]primitive.ObjectID, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("%w: at least one id is required", ErrInvalidID)
+	}
+
+	objectIDs := make([]primitive.ObjectID, 0, len(ids))
+	for _, id := range ids {
+		objectID, err := parseProductID(id)
+		if err != nil {
+			return nil, err
+		}
+
+		objectIDs = append(objectIDs, objectID)
+	}
+
+	return objectIDs, nil
+}
+
+func buildReplaceProductUpdate(product *Product) bson.M {
+	return bson.M{
+		"$set": bson.M{
+			"name":        product.Name,
+			"price":       product.Price,
+			"in_stock":    product.InStock,
+			"description": product.Description,
+		},
+	}
+}
+
+func buildPatchProductUpdate(request PatchProductRequest) (bson.M, error) {
+	if request.Name == nil && request.Price == nil && request.InStock == nil && request.Description == nil {
+		return nil, fmt.Errorf("%w: at least one field is required", ErrInvalidProduct)
+	}
+
+	updateFields := bson.M{}
+
+	if request.Name != nil {
+		name := strings.TrimSpace(*request.Name)
+		if name == "" {
+			return nil, fmt.Errorf("%w: name is required", ErrInvalidProduct)
+		}
+
+		updateFields["name"] = name
+	}
+
+	if request.Price != nil {
+		if *request.Price <= 0 {
+			return nil, fmt.Errorf("%w: price must be greater than zero", ErrInvalidProduct)
+		}
+
+		updateFields["price"] = *request.Price
+	}
+
+	if request.InStock != nil {
+		updateFields["in_stock"] = *request.InStock
+	}
+
+	if request.Description != nil {
+		description := strings.TrimSpace(*request.Description)
+		if len(description) > MaxDescriptionLength {
+			return nil, fmt.Errorf("%w: description must be %d characters or fewer", ErrInvalidProduct, MaxDescriptionLength)
+		}
+
+		updateFields["description"] = description
+	}
+
+	return bson.M{"$set": updateFields}, nil
 }
 
 func validateProduct(product *Product) error {

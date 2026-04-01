@@ -21,6 +21,7 @@ type Repository interface {
 	List(ctx context.Context, params ListProductsParams) ([]Product, error)
 	GetByID(ctx context.Context, id primitive.ObjectID) (*Product, error)
 	Update(ctx context.Context, id primitive.ObjectID, update bson.M) error
+	UpdateMany(ctx context.Context, ids []primitive.ObjectID, update bson.M) error
 	Delete(ctx context.Context, id primitive.ObjectID) error
 }
 
@@ -123,6 +124,40 @@ func (r *MongoRepository) Update(ctx context.Context, id primitive.ObjectID, upd
 	}
 
 	if res.MatchedCount == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+func (r *MongoRepository) UpdateMany(ctx context.Context, ids []primitive.ObjectID, update bson.M) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	uniqueIDs := make([]primitive.ObjectID, 0, len(ids))
+	seenIDs := make(map[primitive.ObjectID]struct{}, len(ids))
+	for _, id := range ids {
+		if _, exists := seenIDs[id]; exists {
+			continue
+		}
+
+		seenIDs[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	filter := bson.M{
+		"_id": bson.M{
+			"$in": uniqueIDs,
+		},
+	}
+
+	res, err := r.collection.UpdateMany(ctx, filter, update)
+	if err != nil {
+		return mapMongoError(err)
+	}
+
+	if res.MatchedCount != int64(len(uniqueIDs)) {
 		return ErrNotFound
 	}
 

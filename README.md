@@ -125,6 +125,27 @@ curl -X PUT http://localhost:8080/products/<product_id> \
   }'
 ```
 
+### PUT /products/bulk
+
+Replace multiple products with the same payload:
+
+```bash
+curl -X PUT http://localhost:8080/products/bulk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ids": [
+      "<product_id_1>",
+      "<product_id_2>"
+    ],
+    "product": {
+      "name": "Mechanical Keyboard V2",
+      "price": 129.99,
+      "in_stock": true,
+      "description": "Shared replacement payload"
+    }
+  }'
+```
+
 ### PATCH /products/{id}
 
 Update only the fields you send:
@@ -138,6 +159,24 @@ curl -X PATCH http://localhost:8080/products/<product_id> \
 ```
 
 `PATCH` is partial. Omitted fields keep their existing values.
+
+### PATCH /products/bulk
+
+Patch multiple products with the same fields:
+
+```bash
+curl -X PATCH http://localhost:8080/products/bulk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ids": [
+      "<product_id_1>",
+      "<product_id_2>"
+    ],
+    "product": {
+      "price": 109.99
+    }
+  }'
+```
 
 ### DELETE /products/{id}
 

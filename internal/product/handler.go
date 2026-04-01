@@ -28,6 +28,8 @@ func (h *Handler) Routes() http.Handler {
 	router.Route("/products", func(r chi.Router) {
 		r.Get("/", h.ListProducts)
 		r.Post("/", h.CreateProduct)
+		r.Put("/bulk", h.ReplaceManyProducts)
+		r.Patch("/bulk", h.PatchManyProducts)
 
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", h.GetProductByID)
@@ -149,6 +151,30 @@ func (h *Handler) ReplaceProduct(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, product)
 }
 
+func (h *Handler) ReplaceManyProducts(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		_ = r.Body.Close()
+	}()
+
+	var request UpdateManyProductsRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.service.ReplaceManyProducts(ctx, request); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) PatchProduct(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_ = r.Body.Close()
@@ -174,6 +200,30 @@ func (h *Handler) PatchProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, product)
+}
+
+func (h *Handler) PatchManyProducts(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		_ = r.Body.Close()
+	}()
+
+	var request PatchManyProductsRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.service.PatchManyProducts(ctx, request); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
