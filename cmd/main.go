@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"go-mongodb/internal/product"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -25,10 +29,10 @@ type Config struct {
 func main() {
 	cfg := loadConfig()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer connectCancel()
 
-	client, err := connectMongo(ctx, cfg.MongoURI)
+	client, err := connectMongo(connectCtx, cfg.MongoURI)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,6 +43,10 @@ func main() {
 	}()
 
 	collection := client.Database(cfg.DatabaseName).Collection(cfg.CollectionName)
+	if err := ensureIndexes(connectCtx, collection); err != nil {
+		log.Fatal(err)
+	}
+
 	repository := product.NewMongoRepository(collection)
 	service := product.NewService(repository)
 	handler := product.NewHandler(service)
@@ -49,11 +57,14 @@ func main() {
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
-	router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	router.Group(func(r chi.Router) {
+		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
 	})
-	router.Mount("/products", handler.Routes())
+
+	router.Mount("/", handler.Routes())
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -66,9 +77,36 @@ func main() {
 	fmt.Println("Available routes:")
 	fmt.Println("GET  /healthz")
 	fmt.Println("GET  /products")
+	fmt.Println("GET  /products?limit=10&skip=0&in_stock=true")
+	fmt.Println("GET  /products/{id}")
 	fmt.Println("POST /products")
+	fmt.Println("PUT /products/{id}")
+	fmt.Println("PATCH /products/{id}")
+	fmt.Println("DELETE /products/{id}")
 
-	log.Fatal(server.ListenAndServe())
+	serverErrors := make(chan error, 1)
+	go func() {
+		serverErrors <- server.ListenAndServe()
+	}()
+
+	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	select {
+	case err := <-serverErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	case <-shutdownCtx.Done():
+		log.Println("shutdown signal received")
+	}
+
+	gracefulCtx, gracefulCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer gracefulCancel()
+
+	if err := server.Shutdown(gracefulCtx); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func loadConfig() Config {
@@ -100,4 +138,13 @@ func connectMongo(ctx context.Context, uri string) (*mongo.Client, error) {
 	}
 
 	return client, nil
+}
+
+func ensureIndexes(ctx context.Context, collection *mongo.Collection) error {
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "name", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("unique_product_name"),
+	})
+
+	return err
 }

@@ -3,9 +3,10 @@
 This project is a small example of MongoDB usage in Go with a layered structure:
 
 - `repository` talks to MongoDB
-- `service` contains business logic and validation
+- `service` contains business logic and request validation
 - `handler` exposes HTTP endpoints
 - `chi` handles routing and middleware
+- MongoDB enforces a unique index on product `name`
 
 ## Project structure
 
@@ -63,6 +64,66 @@ Fetch all products:
 curl http://localhost:8080/products
 ```
 
+Fetch products with pagination and filters:
+
+```bash
+curl "http://localhost:8080/products?limit=10&skip=0&in_stock=true"
+```
+
+Validation rules:
+
+- `name` is required
+- `price` must be greater than `0`
+- `description` can be at most `500` characters
+- product `name` must be unique
+
+Duplicate names return `409 Conflict`.
+
+### GET /products/{id}
+
+Fetch one product by MongoDB id:
+
+```bash
+curl http://localhost:8080/products/<product_id>
+```
+
+### PUT /products/{id}
+
+Replace the full product:
+
+```bash
+curl -X PUT http://localhost:8080/products/<product_id> \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mechanical Keyboard V2",
+    "price": 129.99,
+    "in_stock": true,
+    "description": "Full replacement payload"
+  }'
+```
+
+### PATCH /products/{id}
+
+Update only the fields you send:
+
+```bash
+curl -X PATCH http://localhost:8080/products/<product_id> \
+  -H "Content-Type: application/json" \
+  -d '{
+    "price": 109.99
+  }'
+```
+
+`PATCH` is partial. Omitted fields keep their existing values.
+
+### DELETE /products/{id}
+
+Delete a product:
+
+```bash
+curl -X DELETE http://localhost:8080/products/<product_id>
+```
+
 ### GET /healthz
 
 Health check:
@@ -79,6 +140,12 @@ export MONGODB_DATABASE="store"
 export MONGODB_COLLECTION="products"
 export HTTP_ADDR=":8080"
 go run ./cmd
+```
+
+If port `8080` is already in use, run the API on another port:
+
+```bash
+HTTP_ADDR=:18080 go run ./cmd
 ```
 
 ## Stop MongoDB
