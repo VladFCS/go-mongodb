@@ -43,7 +43,7 @@ The server starts on `http://localhost:8080`.
 
 ### POST /products
 
-Create a product:
+Create one product:
 
 ```bash
 curl -X POST http://localhost:8080/products \
@@ -55,6 +55,29 @@ curl -X POST http://localhost:8080/products \
     "description": "Keyboard with tactile switches"
   }'
 ```
+
+Create multiple products in one request:
+
+```bash
+curl -X POST http://localhost:8080/products \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "name": "Mechanical Keyboard",
+      "price": 99.99,
+      "in_stock": true,
+      "description": "Keyboard with tactile switches"
+    },
+    {
+      "name": "Wireless Mouse",
+      "price": 49.99,
+      "in_stock": true,
+      "description": "Mouse with ergonomic shape"
+    }
+  ]'
+```
+
+`POST /products` accepts either a single product object or an array of product objects. A single-object request returns one product, and an array request returns an array of created products.
 
 ### GET /products
 

@@ -1,10 +1,12 @@
 package product
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -77,10 +79,8 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		_ = r.Body.Close()
 	}()
 
-	var request CreateProductRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
@@ -88,13 +88,38 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	product, err := h.service.CreateProduct(ctx, request)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
+	switch detectJSONPayload(body) {
+	case '{':
+		var request CreateProductRequest
+		if err := decodeStrictJSON(body, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
 
-	writeJSON(w, http.StatusCreated, product)
+		product, err := h.service.CreateProduct(ctx, request)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, product)
+	case '[':
+		var requests []CreateProductRequest
+		if err := decodeStrictJSON(body, &requests); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		products, err := h.service.CreateProducts(ctx, requests)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, products)
+	default:
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	}
 }
 
 func (h *Handler) ReplaceProduct(w http.ResponseWriter, r *http.Request) {
@@ -217,4 +242,33 @@ func parseListProductsParams(r *http.Request) (ListProductsParams, error) {
 	}
 
 	return params, nil
+}
+
+func detectJSONPayload(body []byte) byte {
+	trimmedBody := bytes.TrimSpace(body)
+	if len(trimmedBody) == 0 {
+		return 0
+	}
+
+	return trimmedBody[0]
+}
+
+func decodeStrictJSON[T any](body []byte, target *T) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected extra JSON values")
+		}
+
+		return err
+	}
+
+	return nil
 }

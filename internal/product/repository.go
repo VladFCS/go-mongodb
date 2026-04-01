@@ -17,6 +17,7 @@ var (
 
 type Repository interface {
 	Create(ctx context.Context, product *Product) error
+	CreateMany(ctx context.Context, products []*Product) error
 	List(ctx context.Context, params ListProductsParams) ([]Product, error)
 	GetByID(ctx context.Context, id primitive.ObjectID) (*Product, error)
 	Update(ctx context.Context, id primitive.ObjectID, update bson.M) error
@@ -39,6 +40,33 @@ func (r *MongoRepository) Create(ctx context.Context, product *Product) error {
 
 	if insertedObjectID, ok := result.InsertedID.(primitive.ObjectID); ok {
 		product.ID = insertedObjectID
+	}
+
+	return nil
+}
+
+func (r *MongoRepository) CreateMany(ctx context.Context, products []*Product) error {
+	if len(products) == 0 {
+		return nil
+	}
+
+	documents := make([]any, len(products))
+	for i, product := range products {
+		documents[i] = product
+	}
+
+	result, err := r.collection.InsertMany(ctx, documents)
+	if err != nil {
+		return mapMongoError(err)
+	}
+
+	for i, insertedID := range result.InsertedIDs {
+		insertedObjectID, ok := insertedID.(primitive.ObjectID)
+		if !ok {
+			continue
+		}
+
+		products[i].ID = insertedObjectID
 	}
 
 	return nil
@@ -120,6 +148,15 @@ func mapMongoError(err error) error {
 	var writeException mongo.WriteException
 	if errors.As(err, &writeException) {
 		for _, writeError := range writeException.WriteErrors {
+			if writeError.Code == 11000 {
+				return ErrDuplicateName
+			}
+		}
+	}
+
+	var bulkWriteException mongo.BulkWriteException
+	if errors.As(err, &bulkWriteException) {
+		for _, writeError := range bulkWriteException.WriteErrors {
 			if writeError.Code == 11000 {
 				return ErrDuplicateName
 			}

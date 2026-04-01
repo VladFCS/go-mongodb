@@ -25,22 +25,51 @@ func NewService(repository Repository) *Service {
 }
 
 func (s *Service) CreateProduct(ctx context.Context, request CreateProductRequest) (*Product, error) {
-	product := &Product{
-		Name:        request.Name,
-		Price:       request.Price,
-		InStock:     request.InStock,
-		Description: request.Description,
-	}
-
-	if err := validateProduct(product); err != nil {
+	products, err := s.CreateProducts(ctx, []CreateProductRequest{request})
+	if err != nil {
 		return nil, err
 	}
 
-	if err := s.repository.Create(ctx, product); err != nil {
-		return nil, err
+	return &products[0], nil
+}
+
+func (s *Service) CreateProducts(ctx context.Context, requests []CreateProductRequest) ([]Product, error) {
+	if len(requests) == 0 {
+		return nil, fmt.Errorf("%w: at least one product is required", ErrInvalidProduct)
 	}
 
-	return product, nil
+	products := make([]*Product, 0, len(requests))
+	for _, request := range requests {
+		product := &Product{
+			Name:        request.Name,
+			Price:       request.Price,
+			InStock:     request.InStock,
+			Description: request.Description,
+		}
+
+		if err := validateProduct(product); err != nil {
+			return nil, err
+		}
+
+		products = append(products, product)
+	}
+
+	if len(products) == 1 {
+		if err := s.repository.Create(ctx, products[0]); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.repository.CreateMany(ctx, products); err != nil {
+			return nil, err
+		}
+	}
+
+	createdProducts := make([]Product, len(products))
+	for i, product := range products {
+		createdProducts[i] = *product
+	}
+
+	return createdProducts, nil
 }
 
 func (s *Service) ListProducts(ctx context.Context, params ListProductsParams) ([]Product, error) {
