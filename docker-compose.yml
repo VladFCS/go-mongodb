@@ -1,0 +1,13 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: go-mongodb-demo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: store
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:
