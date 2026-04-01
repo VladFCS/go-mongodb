@@ -112,7 +112,7 @@ curl http://localhost:8080/products/<product_id>
 
 ### PUT /products/{id}
 
-Replace the full product:
+Replace the full product. This route demonstrates MongoDB `ReplaceOne`:
 
 ```bash
 curl -X PUT http://localhost:8080/products/<product_id> \
@@ -127,7 +127,7 @@ curl -X PUT http://localhost:8080/products/<product_id> \
 
 ### PUT /products/bulk
 
-Replace multiple products with the same payload:
+Apply the same full field set to multiple products:
 
 ```bash
 curl -X PUT http://localhost:8080/products/bulk \
@@ -146,9 +146,11 @@ curl -X PUT http://localhost:8080/products/bulk \
   }'
 ```
 
+MongoDB has `ReplaceOne`, but not `ReplaceMany`, so this bulk `PUT` path uses `UpdateMany` with `$set` under the hood.
+
 ### PATCH /products/{id}
 
-Update only the fields you send:
+Update only the fields you send. This route demonstrates MongoDB `UpdateOne`:
 
 ```bash
 curl -X PATCH http://localhost:8080/products/<product_id> \
@@ -162,7 +164,7 @@ curl -X PATCH http://localhost:8080/products/<product_id> \
 
 ### PATCH /products/bulk
 
-Patch multiple products with the same fields:
+Patch multiple products with the same fields. This route demonstrates MongoDB `UpdateMany`:
 
 ```bash
 curl -X PATCH http://localhost:8080/products/bulk \

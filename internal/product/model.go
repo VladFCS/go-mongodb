@@ -23,28 +23,28 @@ type CreateProductRequest struct {
 	Description string  `json:"description,omitempty"`
 }
 
-type UpdateProductRequest struct {
+type ReplaceProductRequest struct {
 	Name        string  `json:"name"`
 	Price       float64 `json:"price"`
 	InStock     bool    `json:"in_stock"`
 	Description string  `json:"description,omitempty"`
 }
 
-type UpdateManyProductsRequest struct {
-	IDs     []string             `json:"ids"`
-	Product UpdateProductRequest `json:"product"`
+type ReplaceProductsRequest struct {
+	IDs     []string              `json:"ids"`
+	Product ReplaceProductRequest `json:"product"`
 }
 
-type PatchProductRequest struct {
+type UpdateProductRequest struct {
 	Name        *string  `json:"name,omitempty"`
 	Price       *float64 `json:"price,omitempty"`
 	InStock     *bool    `json:"in_stock,omitempty"`
 	Description *string  `json:"description,omitempty"`
 }
 
-type PatchManyProductsRequest struct {
-	IDs     []string            `json:"ids"`
-	Product PatchProductRequest `json:"product"`
+type UpdateProductsRequest struct {
+	IDs     []string             `json:"ids"`
+	Product UpdateProductRequest `json:"product"`
 }
 
 type ListProductsParams struct {

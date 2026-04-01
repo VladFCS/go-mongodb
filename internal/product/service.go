@@ -20,10 +20,12 @@ type Service struct {
 	repository Repository
 }
 
+// NewService constructs the product use-case layer.
 func NewService(repository Repository) *Service {
 	return &Service{repository: repository}
 }
 
+// CreateProduct validates and creates one product.
 func (s *Service) CreateProduct(ctx context.Context, request CreateProductRequest) (*Product, error) {
 	products, err := s.CreateProducts(ctx, []CreateProductRequest{request})
 	if err != nil {
@@ -33,6 +35,7 @@ func (s *Service) CreateProduct(ctx context.Context, request CreateProductReques
 	return &products[0], nil
 }
 
+// CreateProducts validates and creates multiple products in one request.
 func (s *Service) CreateProducts(ctx context.Context, requests []CreateProductRequest) ([]Product, error) {
 	if len(requests) == 0 {
 		return nil, fmt.Errorf("%w: at least one product is required", ErrInvalidProduct)
@@ -72,6 +75,7 @@ func (s *Service) CreateProducts(ctx context.Context, requests []CreateProductRe
 	return createdProducts, nil
 }
 
+// ListProducts validates list params and returns matching products.
 func (s *Service) ListProducts(ctx context.Context, params ListProductsParams) ([]Product, error) {
 	validatedParams, err := validateListProductsParams(params)
 	if err != nil {
@@ -81,6 +85,7 @@ func (s *Service) ListProducts(ctx context.Context, params ListProductsParams) (
 	return s.repository.List(ctx, validatedParams)
 }
 
+// GetProductByID validates the id and loads one product.
 func (s *Service) GetProductByID(ctx context.Context, id string) (*Product, error) {
 	objectID, err := parseProductID(id)
 	if err != nil {
@@ -90,7 +95,8 @@ func (s *Service) GetProductByID(ctx context.Context, id string) (*Product, erro
 	return s.repository.GetByID(ctx, objectID)
 }
 
-func (s *Service) ReplaceProduct(ctx context.Context, id string, request UpdateProductRequest) (*Product, error) {
+// ReplaceProduct uses repository.ReplaceOne, which maps to MongoDB ReplaceOne.
+func (s *Service) ReplaceProduct(ctx context.Context, id string, request ReplaceProductRequest) (*Product, error) {
 	objectID, err := parseProductID(id)
 	if err != nil {
 		return nil, err
@@ -108,16 +114,15 @@ func (s *Service) ReplaceProduct(ctx context.Context, id string, request UpdateP
 		return nil, err
 	}
 
-	update := buildReplaceProductUpdate(product)
-
-	if err := s.repository.Update(ctx, objectID, update); err != nil {
+	if err := s.repository.ReplaceOne(ctx, objectID, product); err != nil {
 		return nil, err
 	}
 
 	return s.repository.GetByID(ctx, objectID)
 }
 
-func (s *Service) ReplaceManyProducts(ctx context.Context, request UpdateManyProductsRequest) error {
+// ReplaceProducts uses repository.UpdateMany because MongoDB has no ReplaceMany.
+func (s *Service) ReplaceProducts(ctx context.Context, request ReplaceProductsRequest) error {
 	objectIDs, err := parseProductIDs(request.IDs)
 	if err != nil {
 		return err
@@ -134,10 +139,11 @@ func (s *Service) ReplaceManyProducts(ctx context.Context, request UpdateManyPro
 		return err
 	}
 
-	return s.repository.UpdateMany(ctx, objectIDs, buildReplaceProductUpdate(product))
+	return s.repository.UpdateMany(ctx, objectIDs, buildReplaceProductsUpdate(product))
 }
 
-func (s *Service) PatchProduct(ctx context.Context, id string, request PatchProductRequest) (*Product, error) {
+// UpdateProduct uses repository.UpdateOne, which maps to MongoDB UpdateOne.
+func (s *Service) UpdateProduct(ctx context.Context, id string, request UpdateProductRequest) (*Product, error) {
 	objectID, err := parseProductID(id)
 	if err != nil {
 		return nil, err
@@ -181,20 +187,21 @@ func (s *Service) PatchProduct(ctx context.Context, id string, request PatchProd
 		},
 	}
 
-	if err := s.repository.Update(ctx, objectID, update); err != nil {
+	if err := s.repository.UpdateOne(ctx, objectID, update); err != nil {
 		return nil, err
 	}
 
 	return s.repository.GetByID(ctx, objectID)
 }
 
-func (s *Service) PatchManyProducts(ctx context.Context, request PatchManyProductsRequest) error {
+// UpdateProducts uses repository.UpdateMany, which maps to MongoDB UpdateMany.
+func (s *Service) UpdateProducts(ctx context.Context, request UpdateProductsRequest) error {
 	objectIDs, err := parseProductIDs(request.IDs)
 	if err != nil {
 		return err
 	}
 
-	update, err := buildPatchProductUpdate(request.Product)
+	update, err := buildUpdateProductDocument(request.Product)
 	if err != nil {
 		return err
 	}
@@ -202,6 +209,7 @@ func (s *Service) PatchManyProducts(ctx context.Context, request PatchManyProduc
 	return s.repository.UpdateMany(ctx, objectIDs, update)
 }
 
+// DeleteProduct validates the id and removes one product.
 func (s *Service) DeleteProduct(ctx context.Context, id string) error {
 	objectID, err := parseProductID(id)
 	if err != nil {
@@ -211,6 +219,7 @@ func (s *Service) DeleteProduct(ctx context.Context, id string) error {
 	return s.repository.Delete(ctx, objectID)
 }
 
+// parseProductID converts a hex string into a MongoDB ObjectID.
 func parseProductID(id string) (primitive.ObjectID, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -225,6 +234,7 @@ func parseProductID(id string) (primitive.ObjectID, error) {
 	return objectID, nil
 }
 
+// parseProductIDs converts multiple hex strings into MongoDB ObjectIDs.
 func parseProductIDs(ids []string) ([]primitive.ObjectID, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("%w: at least one id is required", ErrInvalidID)
@@ -243,7 +253,8 @@ func parseProductIDs(ids []string) ([]primitive.ObjectID, error) {
 	return objectIDs, nil
 }
 
-func buildReplaceProductUpdate(product *Product) bson.M {
+// buildReplaceProductsUpdate creates one shared $set document for bulk replace-like updates.
+func buildReplaceProductsUpdate(product *Product) bson.M {
 	return bson.M{
 		"$set": bson.M{
 			"name":        product.Name,
@@ -254,7 +265,8 @@ func buildReplaceProductUpdate(product *Product) bson.M {
 	}
 }
 
-func buildPatchProductUpdate(request PatchProductRequest) (bson.M, error) {
+// buildUpdateProductDocument creates a MongoDB update document for partial updates.
+func buildUpdateProductDocument(request UpdateProductRequest) (bson.M, error) {
 	if request.Name == nil && request.Price == nil && request.InStock == nil && request.Description == nil {
 		return nil, fmt.Errorf("%w: at least one field is required", ErrInvalidProduct)
 	}
@@ -294,6 +306,7 @@ func buildPatchProductUpdate(request PatchProductRequest) (bson.M, error) {
 	return bson.M{"$set": updateFields}, nil
 }
 
+// validateProduct applies the shared business validation rules for a product payload.
 func validateProduct(product *Product) error {
 	product.Name = strings.TrimSpace(product.Name)
 	product.Description = strings.TrimSpace(product.Description)
@@ -313,6 +326,7 @@ func validateProduct(product *Product) error {
 	return nil
 }
 
+// validateListProductsParams validates list pagination and filter params.
 func validateListProductsParams(params ListProductsParams) (ListProductsParams, error) {
 	if params.Limit == 0 {
 		params.Limit = DefaultListLimit

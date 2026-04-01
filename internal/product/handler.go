@@ -18,23 +18,25 @@ type Handler struct {
 	service *Service
 }
 
+// NewHandler constructs the HTTP layer for product routes.
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+// Routes registers all product HTTP endpoints.
 func (h *Handler) Routes() http.Handler {
 	router := chi.NewRouter()
 
 	router.Route("/products", func(r chi.Router) {
 		r.Get("/", h.ListProducts)
 		r.Post("/", h.CreateProduct)
-		r.Put("/bulk", h.ReplaceManyProducts)
-		r.Patch("/bulk", h.PatchManyProducts)
+		r.Put("/bulk", h.ReplaceProducts)
+		r.Patch("/bulk", h.UpdateProducts)
 
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", h.GetProductByID)
 			r.Put("/", h.ReplaceProduct)
-			r.Patch("/", h.PatchProduct)
+			r.Patch("/", h.UpdateProduct)
 			r.Delete("/", h.DeleteProduct)
 		})
 	})
@@ -42,6 +44,7 @@ func (h *Handler) Routes() http.Handler {
 	return router
 }
 
+// ListProducts handles GET /products.
 func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -61,6 +64,7 @@ func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, products)
 }
 
+// GetProductByID handles GET /products/{id}.
 func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -76,6 +80,7 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, product)
 }
 
+// CreateProduct handles POST /products for one or many create payloads.
 func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_ = r.Body.Close()
@@ -124,6 +129,7 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ReplaceProduct handles full replacement via service.ReplaceProduct / MongoDB ReplaceOne.
 func (h *Handler) ReplaceProduct(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_ = r.Body.Close()
@@ -131,7 +137,7 @@ func (h *Handler) ReplaceProduct(w http.ResponseWriter, r *http.Request) {
 
 	id := chi.URLParam(r, "id")
 
-	var request UpdateProductRequest
+	var request ReplaceProductRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
@@ -151,12 +157,13 @@ func (h *Handler) ReplaceProduct(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, product)
 }
 
-func (h *Handler) ReplaceManyProducts(w http.ResponseWriter, r *http.Request) {
+// ReplaceProducts handles bulk full-field replacement semantics via MongoDB UpdateMany.
+func (h *Handler) ReplaceProducts(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_ = r.Body.Close()
 	}()
 
-	var request UpdateManyProductsRequest
+	var request ReplaceProductsRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
@@ -167,7 +174,7 @@ func (h *Handler) ReplaceManyProducts(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	if err := h.service.ReplaceManyProducts(ctx, request); err != nil {
+	if err := h.service.ReplaceProducts(ctx, request); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -175,14 +182,15 @@ func (h *Handler) ReplaceManyProducts(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) PatchProduct(w http.ResponseWriter, r *http.Request) {
+// UpdateProduct handles partial updates via service.UpdateProduct / MongoDB UpdateOne.
+func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_ = r.Body.Close()
 	}()
 
 	id := chi.URLParam(r, "id")
 
-	var request PatchProductRequest
+	var request UpdateProductRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
@@ -193,7 +201,7 @@ func (h *Handler) PatchProduct(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	product, err := h.service.PatchProduct(ctx, id, request)
+	product, err := h.service.UpdateProduct(ctx, id, request)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -202,12 +210,13 @@ func (h *Handler) PatchProduct(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, product)
 }
 
-func (h *Handler) PatchManyProducts(w http.ResponseWriter, r *http.Request) {
+// UpdateProducts handles bulk partial updates via service.UpdateProducts / MongoDB UpdateMany.
+func (h *Handler) UpdateProducts(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_ = r.Body.Close()
 	}()
 
-	var request PatchManyProductsRequest
+	var request UpdateProductsRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
@@ -218,7 +227,7 @@ func (h *Handler) PatchManyProducts(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	if err := h.service.PatchManyProducts(ctx, request); err != nil {
+	if err := h.service.UpdateProducts(ctx, request); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -226,6 +235,7 @@ func (h *Handler) PatchManyProducts(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// DeleteProduct handles DELETE /products/{id}.
 func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -240,16 +250,19 @@ func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// writeJSON writes a JSON response payload with the given HTTP status.
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+// writeError writes a standard JSON error response.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+// writeServiceError maps domain errors to HTTP status codes.
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidProduct), errors.Is(err, ErrInvalidID), errors.Is(err, ErrInvalidQuery):
@@ -263,6 +276,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	}
 }
 
+// parseListProductsParams parses supported query params from the request URL.
 func parseListProductsParams(r *http.Request) (ListProductsParams, error) {
 	query := r.URL.Query()
 	params := ListProductsParams{}
@@ -294,6 +308,7 @@ func parseListProductsParams(r *http.Request) (ListProductsParams, error) {
 	return params, nil
 }
 
+// detectJSONPayload inspects the first non-space byte to distinguish object vs array payloads.
 func detectJSONPayload(body []byte) byte {
 	trimmedBody := bytes.TrimSpace(body)
 	if len(trimmedBody) == 0 {
@@ -303,6 +318,7 @@ func detectJSONPayload(body []byte) byte {
 	return trimmedBody[0]
 }
 
+// decodeStrictJSON decodes one JSON value and rejects unknown fields or trailing payloads.
 func decodeStrictJSON[T any](body []byte, target *T) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()

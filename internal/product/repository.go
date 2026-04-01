@@ -20,8 +20,9 @@ type Repository interface {
 	CreateMany(ctx context.Context, products []*Product) error
 	List(ctx context.Context, params ListProductsParams) ([]Product, error)
 	GetByID(ctx context.Context, id primitive.ObjectID) (*Product, error)
-	Update(ctx context.Context, id primitive.ObjectID, update bson.M) error
+	UpdateOne(ctx context.Context, id primitive.ObjectID, update bson.M) error
 	UpdateMany(ctx context.Context, ids []primitive.ObjectID, update bson.M) error
+	ReplaceOne(ctx context.Context, id primitive.ObjectID, product *Product) error
 	Delete(ctx context.Context, id primitive.ObjectID) error
 }
 
@@ -29,10 +30,12 @@ type MongoRepository struct {
 	collection *mongo.Collection
 }
 
+// NewMongoRepository constructs a product repository backed by a MongoDB collection.
 func NewMongoRepository(collection *mongo.Collection) *MongoRepository {
 	return &MongoRepository{collection: collection}
 }
 
+// Create stores one product using MongoDB InsertOne.
 func (r *MongoRepository) Create(ctx context.Context, product *Product) error {
 	result, err := r.collection.InsertOne(ctx, product)
 	if err != nil {
@@ -46,6 +49,7 @@ func (r *MongoRepository) Create(ctx context.Context, product *Product) error {
 	return nil
 }
 
+// CreateMany stores multiple products using MongoDB InsertMany.
 func (r *MongoRepository) CreateMany(ctx context.Context, products []*Product) error {
 	if len(products) == 0 {
 		return nil
@@ -73,6 +77,7 @@ func (r *MongoRepository) CreateMany(ctx context.Context, products []*Product) e
 	return nil
 }
 
+// List returns products filtered by the supported query params.
 func (r *MongoRepository) List(ctx context.Context, params ListProductsParams) ([]Product, error) {
 	filter := bson.M{}
 	if params.InStock != nil {
@@ -100,6 +105,7 @@ func (r *MongoRepository) List(ctx context.Context, params ListProductsParams) (
 	return products, nil
 }
 
+// GetByID loads one product by its MongoDB ObjectID.
 func (r *MongoRepository) GetByID(ctx context.Context, id primitive.ObjectID) (*Product, error) {
 	filter := bson.M{"_id": id}
 
@@ -115,7 +121,8 @@ func (r *MongoRepository) GetByID(ctx context.Context, id primitive.ObjectID) (*
 	return &product, nil
 }
 
-func (r *MongoRepository) Update(ctx context.Context, id primitive.ObjectID, update bson.M) error {
+// UpdateOne uses MongoDB UpdateOne with an update document such as $set.
+func (r *MongoRepository) UpdateOne(ctx context.Context, id primitive.ObjectID, update bson.M) error {
 	filter := bson.M{"_id": id}
 
 	res, err := r.collection.UpdateOne(ctx, filter, update)
@@ -130,6 +137,7 @@ func (r *MongoRepository) Update(ctx context.Context, id primitive.ObjectID, upd
 	return nil
 }
 
+// UpdateMany uses MongoDB UpdateMany with one shared update document for all ids.
 func (r *MongoRepository) UpdateMany(ctx context.Context, ids []primitive.ObjectID, update bson.M) error {
 	if len(ids) == 0 {
 		return nil
@@ -164,6 +172,24 @@ func (r *MongoRepository) UpdateMany(ctx context.Context, ids []primitive.Object
 	return nil
 }
 
+// ReplaceOne uses MongoDB ReplaceOne with a full replacement document.
+func (r *MongoRepository) ReplaceOne(ctx context.Context, id primitive.ObjectID, product *Product) error {
+	filter := bson.M{"_id": id}
+	product.ID = id
+
+	res, err := r.collection.ReplaceOne(ctx, filter, product)
+	if err != nil {
+		return mapMongoError(err)
+	}
+
+	if res.MatchedCount == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// Delete removes one product using MongoDB DeleteOne.
 func (r *MongoRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
 	filter := bson.M{"_id": id}
 
@@ -179,6 +205,7 @@ func (r *MongoRepository) Delete(ctx context.Context, id primitive.ObjectID) err
 	return nil
 }
 
+// mapMongoError converts MongoDB driver errors into domain-level repository errors.
 func mapMongoError(err error) error {
 	var writeException mongo.WriteException
 	if errors.As(err, &writeException) {
