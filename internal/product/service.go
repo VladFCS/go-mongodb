@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -33,6 +34,35 @@ func (s *Service) CreateProduct(ctx context.Context, request CreateProductReques
 	}
 
 	return &products[0], nil
+}
+
+// CreateProductWithTransaction demonstrates MongoDB transactions by inserting a product and audit record atomically.
+func (s *Service) CreateProductWithTransaction(ctx context.Context, request CreateProductRequest) (*CreateProductTransactionResult, error) {
+	product := &Product{
+		Name:        request.Name,
+		Price:       request.Price,
+		InStock:     request.InStock,
+		Description: request.Description,
+	}
+
+	if err := validateProduct(product); err != nil {
+		return nil, err
+	}
+
+	audit := &ProductAudit{
+		Action:    "product.created",
+		Message:   fmt.Sprintf("product %q created in transaction", product.Name),
+		CreatedAt: time.Now().UTC(),
+	}
+
+	if err := s.repository.CreateWithAudit(ctx, product, audit); err != nil {
+		return nil, err
+	}
+
+	return &CreateProductTransactionResult{
+		Product: *product,
+		Audit:   *audit,
+	}, nil
 }
 
 // CreateProducts validates and creates multiple products in one request.

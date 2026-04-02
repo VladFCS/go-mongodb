@@ -1,6 +1,10 @@
 package product
 
-import "go.mongodb.org/mongo-driver/bson/primitive"
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 const (
 	DefaultListLimit     = 10
@@ -14,6 +18,19 @@ type Product struct {
 	Price       float64            `bson:"price" json:"price"`
 	InStock     bool               `bson:"in_stock" json:"in_stock"`
 	Description string             `bson:"description,omitempty" json:"description,omitempty"`
+}
+
+type ProductAudit struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ProductID primitive.ObjectID `bson:"product_id" json:"product_id"`
+	Action    string             `bson:"action" json:"action"`
+	Message   string             `bson:"message" json:"message"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type CreateProductTransactionResult struct {
+	Product Product      `json:"product"`
+	Audit   ProductAudit `json:"audit"`
 }
 
 type CreateProductRequest struct {

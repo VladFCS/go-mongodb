@@ -30,6 +30,7 @@ func (h *Handler) Routes() http.Handler {
 	router.Route("/products", func(r chi.Router) {
 		r.Get("/", h.ListProducts)
 		r.Post("/", h.CreateProduct)
+		r.Post("/transaction", h.CreateProductTransaction)
 		r.Put("/bulk", h.ReplaceProducts)
 		r.Patch("/bulk", h.UpdateProducts)
 
@@ -127,6 +128,32 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 	}
+}
+
+// CreateProductTransaction handles POST /products/transaction for a transactional create example.
+func (h *Handler) CreateProductTransaction(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		_ = r.Body.Close()
+	}()
+
+	var request CreateProductRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	result, err := h.service.CreateProductWithTransaction(ctx, request)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result)
 }
 
 // ReplaceProduct handles full replacement via service.ReplaceProduct / MongoDB ReplaceOne.

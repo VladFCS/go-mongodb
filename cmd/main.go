@@ -20,10 +20,11 @@ import (
 )
 
 type Config struct {
-	MongoURI       string
-	DatabaseName   string
-	CollectionName string
-	HTTPAddr       string
+	MongoURI            string
+	DatabaseName        string
+	CollectionName      string
+	AuditCollectionName string
+	HTTPAddr            string
 }
 
 func main() {
@@ -42,12 +43,14 @@ func main() {
 		}
 	}()
 
-	collection := client.Database(cfg.DatabaseName).Collection(cfg.CollectionName)
+	database := client.Database(cfg.DatabaseName)
+	collection := database.Collection(cfg.CollectionName)
+	auditCollection := database.Collection(cfg.AuditCollectionName)
 	if err := ensureIndexes(connectCtx, collection); err != nil {
 		log.Fatal(err)
 	}
 
-	repository := product.NewMongoRepository(collection)
+	repository := product.NewMongoRepository(client, collection, auditCollection)
 	service := product.NewService(repository)
 	handler := product.NewHandler(service)
 
@@ -80,6 +83,7 @@ func main() {
 	fmt.Println("GET  /products?limit=10&skip=0&in_stock=true")
 	fmt.Println("GET  /products/{id}")
 	fmt.Println("POST /products (single object or array)")
+	fmt.Println("POST /products/transaction")
 	fmt.Println("PUT  /products/bulk")
 	fmt.Println("PATCH /products/bulk")
 	fmt.Println("PUT /products/{id}")
@@ -113,10 +117,11 @@ func main() {
 
 func loadConfig() Config {
 	return Config{
-		MongoURI:       envOrDefault("MONGODB_URI", "mongodb://localhost:27017"),
-		DatabaseName:   envOrDefault("MONGODB_DATABASE", "store"),
-		CollectionName: envOrDefault("MONGODB_COLLECTION", "products"),
-		HTTPAddr:       envOrDefault("HTTP_ADDR", ":8080"),
+		MongoURI:            envOrDefault("MONGODB_URI", "mongodb://localhost:27017/?replicaSet=rs0"),
+		DatabaseName:        envOrDefault("MONGODB_DATABASE", "store"),
+		CollectionName:      envOrDefault("MONGODB_COLLECTION", "products"),
+		AuditCollectionName: envOrDefault("MONGODB_AUDIT_COLLECTION", "product_audits"),
+		HTTPAddr:            envOrDefault("HTTP_ADDR", ":8080"),
 	}
 }
 

@@ -9,14 +9,17 @@ import (
 )
 
 type stubRepository struct {
-	storedProduct     *Product
-	replaceOneCalled  bool
-	replaceOneID      primitive.ObjectID
-	replaceOneProduct *Product
-	listCalled        bool
-	listParams        ListProductsParams
-	listResult        []Product
-	listErr           error
+	storedProduct          *Product
+	replaceOneCalled       bool
+	replaceOneID           primitive.ObjectID
+	replaceOneProduct      *Product
+	createWithAuditCalled  bool
+	createWithAuditProduct *Product
+	createWithAuditAudit   *ProductAudit
+	listCalled             bool
+	listParams             ListProductsParams
+	listResult             []Product
+	listErr                error
 }
 
 func (r *stubRepository) Create(ctx context.Context, product *Product) error {
@@ -24,6 +27,30 @@ func (r *stubRepository) Create(ctx context.Context, product *Product) error {
 }
 
 func (r *stubRepository) CreateMany(ctx context.Context, products []*Product) error {
+	return nil
+}
+
+func (r *stubRepository) CreateWithAudit(ctx context.Context, product *Product, audit *ProductAudit) error {
+	r.createWithAuditCalled = true
+
+	productCopy := *product
+	if productCopy.ID.IsZero() {
+		productCopy.ID = primitive.NewObjectID()
+	}
+
+	auditCopy := *audit
+	if auditCopy.ID.IsZero() {
+		auditCopy.ID = primitive.NewObjectID()
+	}
+	auditCopy.ProductID = productCopy.ID
+
+	*product = productCopy
+	*audit = auditCopy
+
+	r.createWithAuditProduct = &productCopy
+	r.createWithAuditAudit = &auditCopy
+	r.storedProduct = &productCopy
+
 	return nil
 }
 
@@ -65,6 +92,55 @@ func (r *stubRepository) ReplaceOne(ctx context.Context, id primitive.ObjectID, 
 
 func (r *stubRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
 	return nil
+}
+
+func TestServiceCreateProductWithTransaction_CreatesProductAndAudit(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubRepository{}
+	service := NewService(repo)
+
+	result, err := service.CreateProductWithTransaction(context.Background(), CreateProductRequest{
+		Name:        "USB-C Dock",
+		Price:       149.99,
+		InStock:     true,
+		Description: "Dock with dual monitor support",
+	})
+	if err != nil {
+		t.Fatalf("CreateProductWithTransaction returned error: %v", err)
+	}
+
+	if !repo.createWithAuditCalled {
+		t.Fatal("expected CreateWithAudit to be called")
+	}
+
+	if repo.createWithAuditProduct == nil {
+		t.Fatal("expected product payload to be captured")
+	}
+
+	if repo.createWithAuditAudit == nil {
+		t.Fatal("expected audit payload to be captured")
+	}
+
+	if result.Product.ID.IsZero() {
+		t.Fatal("expected created product id to be set")
+	}
+
+	if result.Audit.ID.IsZero() {
+		t.Fatal("expected audit id to be set")
+	}
+
+	if result.Audit.ProductID != result.Product.ID {
+		t.Fatalf("expected audit product id %s, got %s", result.Product.ID.Hex(), result.Audit.ProductID.Hex())
+	}
+
+	if result.Audit.Action != "product.created" {
+		t.Fatalf("expected audit action %q, got %q", "product.created", result.Audit.Action)
+	}
+
+	if result.Product.Name != "USB-C Dock" {
+		t.Fatalf("expected name %q, got %q", "USB-C Dock", result.Product.Name)
+	}
 }
 
 func TestServiceReplaceProduct_UsesReplaceOneAndReturnsUpdatedProduct(t *testing.T) {
@@ -225,9 +301,9 @@ func TestServiceCreateProduct_WithoutName(t *testing.T) {
 	service := NewService(repo)
 
 	_, err := service.CreateProduct(context.Background(), CreateProductRequest{
-			Price:       129.99,
-			InStock:     true,
-			Description: "Hot-swappable keyboard",
+		Price:       129.99,
+		InStock:     true,
+		Description: "Hot-swappable keyboard",
 	})
 
 	if err == nil {
@@ -242,8 +318,8 @@ func TestServiceCreateProduct_WithoutPrice(t *testing.T) {
 	service := NewService(repo)
 
 	_, err := service.CreateProduct(context.Background(), CreateProductRequest{
-		Name: "Game Mouse 4999",
-		InStock: true,
+		Name:        "Game Mouse 4999",
+		InStock:     true,
 		Description: "Cool mouse",
 	})
 

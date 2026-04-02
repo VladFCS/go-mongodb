@@ -8,6 +8,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readconcern"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 )
 
 var (
@@ -18,6 +20,7 @@ var (
 type Repository interface {
 	Create(ctx context.Context, product *Product) error
 	CreateMany(ctx context.Context, products []*Product) error
+	CreateWithAudit(ctx context.Context, product *Product, audit *ProductAudit) error
 	List(ctx context.Context, params ListProductsParams) ([]Product, error)
 	GetByID(ctx context.Context, id primitive.ObjectID) (*Product, error)
 	UpdateOne(ctx context.Context, id primitive.ObjectID, update bson.M) error
@@ -27,12 +30,18 @@ type Repository interface {
 }
 
 type MongoRepository struct {
-	collection *mongo.Collection
+	client          *mongo.Client
+	collection      *mongo.Collection
+	auditCollection *mongo.Collection
 }
 
 // NewMongoRepository constructs a product repository backed by a MongoDB collection.
-func NewMongoRepository(collection *mongo.Collection) *MongoRepository {
-	return &MongoRepository{collection: collection}
+func NewMongoRepository(client *mongo.Client, collection *mongo.Collection, auditCollection *mongo.Collection) *MongoRepository {
+	return &MongoRepository{
+		client:          client,
+		collection:      collection,
+		auditCollection: auditCollection,
+	}
 }
 
 // Create stores one product using MongoDB InsertOne.
@@ -72,6 +81,46 @@ func (r *MongoRepository) CreateMany(ctx context.Context, products []*Product) e
 		}
 
 		products[i].ID = insertedObjectID
+	}
+
+	return nil
+}
+
+// CreateWithAudit stores a product and its audit record atomically in one MongoDB transaction.
+func (r *MongoRepository) CreateWithAudit(ctx context.Context, product *Product, audit *ProductAudit) error {
+	if product.ID.IsZero() {
+		product.ID = primitive.NewObjectID()
+	}
+
+	if audit.ID.IsZero() {
+		audit.ID = primitive.NewObjectID()
+	}
+
+	audit.ProductID = product.ID
+
+	session, err := r.client.StartSession()
+	if err != nil {
+		return err
+	}
+	defer session.EndSession(ctx)
+
+	transactionOptions := options.Transaction().
+		SetReadConcern(readconcern.Snapshot()).
+		SetWriteConcern(writeconcern.Majority())
+
+	_, err = session.WithTransaction(ctx, func(sessionCtx mongo.SessionContext) (any, error) {
+		if _, err := r.collection.InsertOne(sessionCtx, product); err != nil {
+			return nil, mapMongoError(err)
+		}
+
+		if _, err := r.auditCollection.InsertOne(sessionCtx, audit); err != nil {
+			return nil, mapMongoError(err)
+		}
+
+		return nil, nil
+	}, transactionOptions)
+	if err != nil {
+		return mapMongoError(err)
 	}
 
 	return nil

@@ -7,6 +7,7 @@ This project is a small example of MongoDB usage in Go with a layered structure:
 - `handler` exposes HTTP endpoints
 - `chi` handles routing and middleware
 - MongoDB enforces a unique index on product `name`
+- `POST /products/transaction` demonstrates a MongoDB transaction across `products` and `product_audits`
 
 ## Project structure
 
@@ -29,7 +30,9 @@ This project is a small example of MongoDB usage in Go with a layered structure:
 docker compose up -d
 ```
 
-MongoDB will be available at `mongodb://localhost:27017`.
+MongoDB will be available at `mongodb://localhost:27017/?replicaSet=rs0`.
+
+The compose setup starts MongoDB as a single-node replica set because transactions require a replica set, even for local demos.
 
 ## Run the API
 
@@ -109,6 +112,23 @@ Fetch one product by MongoDB id:
 ```bash
 curl http://localhost:8080/products/<product_id>
 ```
+
+### POST /products/transaction
+
+Create a product and an audit document in one MongoDB transaction:
+
+```bash
+curl -X POST http://localhost:8080/products/transaction \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "USB-C Dock",
+    "price": 149.99,
+    "in_stock": true,
+    "description": "Dock with dual monitor support"
+  }'
+```
+
+This endpoint writes to both `products` and `product_audits` atomically. If either write fails, MongoDB rolls the whole transaction back.
 
 ### PUT /products/{id}
 
@@ -199,9 +219,10 @@ curl http://localhost:8080/healthz
 ## Optional environment variables
 
 ```bash
-export MONGODB_URI="mongodb://localhost:27017"
+export MONGODB_URI="mongodb://localhost:27017/?replicaSet=rs0"
 export MONGODB_DATABASE="store"
 export MONGODB_COLLECTION="products"
+export MONGODB_AUDIT_COLLECTION="product_audits"
 export HTTP_ADDR=":8080"
 go run ./cmd
 ```
